@@ -1,11 +1,11 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 
-import HelloWorld from './components/HelloWorld.jsx';
+import Map from './components/Map.jsx';
 
 const App = () => (
   <div>
-    <HelloWorld />
+    <Map />
   </div>
 );
 
