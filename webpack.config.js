@@ -16,6 +16,7 @@ const babelLoader = {
     loader: 'babel-loader',
     options: {
       presets: ['env', 'react'],
+      plugins: ['transform-class-properties'],
     },
   },
 };
@@ -33,6 +34,7 @@ module.exports = {
     rules: [babelLoader], 
   },
   devServer: {
+    host: '0.0.0.0',
     port: 8000,
     contentBase: 'static',
   },
