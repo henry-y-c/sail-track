@@ -27,4 +27,4 @@ or
 $ yarn dev
 ```
 
-Then open http://localhost:8000/ in browser
+Then open http://localhost:8000/ in browser, or http://xxx.xxx.xxx.xxx:8000 on mobile devices with the host's local network IP address.

@@ -1,10 +1,62 @@
 import React from 'react';
+import ReactDOM from 'react-dom';
+import PropTypes from 'prop-types';
+
+// Map operation enum
+const TouchActivity = {
+  pan: "pan",
+  zoom: "zoom",
+  none: "none",
+}
 
 export default class Map extends React.Component {
+  constructor(props) {
+    super(props);
+
+    this.touchActivity = TouchActivity.none;
+    this.activitySkipFrame = 5;
+    this.activityFrameRegister = 0;
+    this.maxZoomScale = 5;
+    // SVG map DOM element info, need to be updated later
+    this.client = { w: null, h: null };
+    // SVG view box info
+    this.viewBox = {
+      x: props.viewBox.x ? props.viewBox.x : 0,
+      y: props.viewBox.y ? props.viewBox.y : 0,
+      w: props.viewBox.w ? props.viewBox.w : props.svgSize.w,
+      h: props.viewBox.h ? props.viewBox.h : props.svgSize.h,
+      toClientRatio: null, // toClientRatio = this.viewBox.w / this.client.w (need to be updated when mounted and resized)
+      zoomScale: null, // This is a relative zoom scale, 1 means the view box is at [0, 0, fullWidth, fullHeight] or the equally cut one
+      toString: () => `${this.viewBox.x} ${this.viewBox.y} ${this.viewBox.w} ${this.viewBox.h}`,
+      render: () => this.setState({ viewBox: this.viewBox.toString() }),
+    };
+    this.touches = [ { x: 0, y: 0 }, { x: 0, y: 0 }, { d: 0 } ];
+
+    this.state = {
+      viewBox: this.viewBox.toString(), // The view box string for SVG component
+    };
+  }
+
+  componentDidMount() {
+    // Initialize client info
+    this.getClientInfo();
+    // Auto cut SVG to the client size
+    this.autocutSVG();
+    // Add event listener to handle screen orientation and window resizing
+    window.addEventListener("resize", this.windowResizeHandler);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener("resize", this.windowResizeHandler);
+  }
+  
   render() {
     return (
-      <div className="svg-container">
-        <svg version="1.1" viewBox="0 0 1134.1289 824.63992" preserveAspectRatio="xMidYMid slice">
+      <div className="svg-container" 
+        onTouchStart={this.updateTouchActivity} onTouchEnd={this.updateTouchActivity}
+        onTouchMove={this.executeTouchActivity}
+      >
+        <svg ref="svgMap" version="1.1" viewBox={this.state.viewBox} preserveAspectRatio="xMidYMid slice">
           <defs id="defs6" />
           <g transform="matrix(0,1.3333333,1.3333333,0,-94.262186,-203.85866)" id="g10">
             <path d="M 152.894,70.696641 H 771.37398 V 921.29334 H 152.894 Z" style={{fill: '#c6ecff', fillOpacity: 1, fillRule: 'nonzero', stroke: 'none', strokeWidth: '0.06829456'}} id="path14" />
@@ -168,4 +220,232 @@ export default class Map extends React.Component {
       </div>
     );
   }
+
+  panSVG = (x, y) => {
+    this.viewBox.x += x;
+    this.viewBox.y += y;
+    this.viewBox.render();
+  }
+
+  // zoomSVG = (scale, center) => {
+  //   const { x, y, w, h } = this.viewBox;
+  //   const midX = center.x;
+  //   const midY = center.y;
+  //   this.viewBox.w = this.props.svgSize.w / scale;
+  //   this.viewBox.h = this.props.svgSize.h / scale;
+  //   this.viewBox.x = midX - this.viewBox.w / 2;
+  //   this.viewBox.y = midY - this.viewBox.h / 2;
+
+  //   this.autocutSVG();
+  //   this.viewBox.render();
+  // }
+
+  zoomSVG = (scale) => {
+    const { x, y, w, h } = this.viewBox;
+    const midX = x + w / 2;
+    const midY = y + h / 2;
+    this.viewBox.w = this.props.svgSize.w / scale;
+    this.viewBox.h = this.props.svgSize.h / scale;
+    this.viewBox.x = midX - this.viewBox.w / 2;
+    this.viewBox.y = midY - this.viewBox.h / 2;
+
+    this.autocutSVG();
+    this.viewBox.render();
+  }
+
+  getClientInfo = () => {
+    const mapDOM = ReactDOM.findDOMNode(this.refs.svgMap);
+    this.client.w = mapDOM.clientWidth;
+    this.client.h = mapDOM.clientHeight;
+  }
+
+  calculateCurrentZoomScale = () => {
+    // Calculate unit scale (absolute) in current client size
+    let unitAbsoluteScale = 1;
+    // Find minimal ratio between horizontal and vertical
+    const ratioX = this.props.svgSize.w / this.client.w;
+    const ratioY = this.props.svgSize.h / this.client.h;
+    const ratio = Math.min(ratioX, ratioY);
+    
+    this.viewBox.zoomScale = ratio / this.viewBox.toClientRatio;
+  }
+
+  autocutSVG = () => {
+    const { x, y, w, h } = this.viewBox;
+    const midX = x + w / 2;
+    const midY = y + h / 2;
+
+    // Find minimal ratio between horizontal and vertical
+    const ratioX = w / this.client.w;
+    const ratioY = h / this.client.h;
+    const ratio = Math.min(ratioX, ratioY);
+    this.viewBox.toClientRatio = ratio;
+
+    // Cut
+    this.viewBox.w = ratio * this.client.w;
+    this.viewBox.h = ratio * this.client.h;
+    this.viewBox.x = midX - this.viewBox.w / 2;
+    this.viewBox.y = midY - this.viewBox.h / 2;
+
+    // If zoom scale is null (initialization), calculate and register current zoom scale
+    if (this.viewBox.zoomScale === null) {
+      this.calculateCurrentZoomScale();
+    }
+
+    // Render
+    this.viewBox.render();
+  }
+
+  resizeCutSVG = () => {
+    this.getClientInfo();
+
+    const { x, y, w, h } = this.viewBox;
+    const midX = x + w / 2;
+    const midY = y + h / 2;
+
+    // Cut
+    const minSVG = Math.min(w, h);
+    const minClient = Math.min(this.client.w, this.client.h);
+    const ratio = minSVG / minClient;
+    this.viewBox.toClientRatio = ratio;
+    this.viewBox.w = ratio * this.client.w;
+    this.viewBox.h = ratio * this.client.h;
+    this.viewBox.x = midX - this.viewBox.w / 2;
+    this.viewBox.y = midY - this.viewBox.h / 2;
+
+    // Re-calc current zoom scale
+    this.calculateCurrentZoomScale();
+
+    // Render
+    this.viewBox.render();
+  }
+
+  windowResizeHandler = event => {
+    event.preventDefault();
+    // Update client info
+    this.getClientInfo();
+    // Auto cut SVG to the client size
+    this.resizeCutSVG();
+  }
+
+  updateTouchActivity = event => {
+    switch(event.touches.length) {
+      case 0:
+        this.touchActivity = TouchActivity.none;
+        break;
+      case 1:
+        this.touchActivity = TouchActivity.pan;
+        break;
+      case 2:
+        this.touchActivity = TouchActivity.zoom;
+        break;
+      default:
+        this.touchActivity = TouchActivity.none;
+    }
+    this.activityFrameRegister = 0;
+  }
+
+  executeTouchActivity = event => {
+    event.preventDefault();
+    switch(this.touchActivity) {
+      case TouchActivity.pan:
+        this.pan(event.touches[0].clientX, event.touches[0].clientY);
+        break;
+      case TouchActivity.zoom:
+        this.touchZoom(
+          { x: event.touches[0].clientX, y: event.touches[0].clientY },
+          { x: event.touches[1].clientX, y: event.touches[1].clientY }
+        )
+        break;
+      default:
+        break;
+    }
+  }
+
+  pan = (x, y) => {
+    // Get client touch delta
+    const deltaX = this.touches[0].x - x;
+    const deltaY= this.touches[0].y - y;
+
+    // Register the position for next timestep's delta calc
+    this.touches[0].x = x;
+    this.touches[0].y = y;
+    
+    // Not sure if its a bug or just the async problem, we need to skip some frames to avoid glitchy touch interactions
+    if (this.activityFrameRegister < this.activitySkipFrame) {
+      this.activityFrameRegister += 1;
+      return;
+    }
+    
+    // Move 
+    this.panSVG(deltaX * this.viewBox.toClientRatio, deltaY * this.viewBox.toClientRatio);
+  }
+
+  touchZoom = (touch0, touch1) => {
+    // Calculate the touch distance
+    const dTouch = Math.sqrt(Math.pow(touch0.x - touch1.x, 2) + Math.pow(touch0.y - touch1.y, 2));
+    const lastDTouch = this.touches[2].d;
+
+    // Register the value
+    this.touches[0] = touch0;
+    this.touches[1] = touch1;
+    this.touches[2].d = dTouch;
+
+    // Touch glitch hack
+    if (this.activityFrameRegister < this.activitySkipFrame) {
+      this.activityFrameRegister += 1;
+      return;
+    }
+
+    // Sanity check
+    if (lastDTouch == 0) {
+      console.log("Last distance can't be 0");
+      return;
+    }
+
+    // Calculate the zoomScale
+    this.viewBox.zoomScale *= dTouch / lastDTouch;
+    
+    /////////////
+    // Those commented codes are for pinch zoom with pinch center as zoom center, but didnt work, hang it for now.
+    //
+    // // Get client touch center
+    // const touchCenterX = (touch0.x + touch1.x) / 2;
+    // const touchCenterY = (touch0.y + touch1.y) / 2;
+
+    // // Convert client touch center to svg coordinate
+    // const { x, y, w, h } = this.viewBox;
+    // const ratio = this.viewBox.toClientRatio;
+    // const centerX = touchCenterX * ratio + x;
+    // const centerY = touchCenterY * ratio + y;
+    
+    // Zoom
+    // this.zoomSVG(this.viewBox.zoomScale, { x: centerX, y: centerY });
+    //////////////
+
+    this.zoomSVG(this.viewBox.zoomScale);
+  }
+
+  wheelZoom = () => {
+    // TODO: Add wheel zoom implementation
+  }
 }
+
+Map.propTypes = {
+  svgSize: PropTypes.shape({
+    w: PropTypes.number.isRequired,
+    h: PropTypes.number.isRequired,
+  }).isRequired,
+  viewBox: PropTypes.shape({
+    x: PropTypes.number,
+    y: PropTypes.number,
+    w: PropTypes.number,
+    h: PropTypes.number,
+  }).isRequired,
+  wheelZoomRate: PropTypes.number,
+};
+
+Map.defaultProps = {
+  viewBox: {},
+  wheelZoomRate: 1.05,
+};

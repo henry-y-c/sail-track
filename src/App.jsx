@@ -5,7 +5,10 @@ import Map from './components/Map.jsx';
 
 const App = () => (
   <div>
-    <Map />
+    <Map 
+      svgSize={{ w: 1134.1289, h: 824.63995 }}
+      viewBox={{ x: 100, y: 200, w: 400, h: 400 }}
+    />
   </div>
 );
 
